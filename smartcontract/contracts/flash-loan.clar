@@ -9,8 +9,11 @@
 (define-data-var total-liquidity uint u0)
 (define-data-var flash-loan-fee uint u9) ;; 0.09% fee
 
-(define-map active-loans uint { borrower: principal, amount: uint, fee: uint })
-(define-data-var next-loan-id uint u1)
+(define-trait flash-borrower-trait
+  (
+    (execute-operation (uint uint) (response bool uint))
+  )
+)
 
 (define-read-only (get-available-liquidity)
   (var-get total-liquidity)
@@ -28,27 +31,30 @@
   )
 )
 
-(define-public (flash-loan (amount uint))
+(define-public (flash-loan (amount uint) (borrower <flash-borrower-trait>))
   (let (
-    (loan-id (var-get next-loan-id))
     (fee (calculate-fee amount))
+    (total-repay (+ amount fee))
+    (sender tx-sender)
   )
+    ;; 1. Check liquidity
     (asserts! (>= (var-get total-liquidity) amount) err-insufficient-liquidity)
-    (map-set active-loans loan-id { borrower: tx-sender, amount: amount, fee: fee })
-    (var-set next-loan-id (+ loan-id u1))
-    (try! (as-contract (stx-transfer? amount tx-sender tx-sender)))
-    (ok loan-id)
-  )
-)
-
-(define-public (repay-flash-loan (loan-id uint))
-  (let (
-    (loan (unwrap! (map-get? active-loans loan-id) (err u103)))
-    (total-repay (+ (get amount loan) (get fee loan)))
-  )
-    (asserts! (is-eq tx-sender (get borrower loan)) err-unauthorized)
-    (try! (stx-transfer? total-repay tx-sender (as-contract tx-sender)))
-    (map-delete active-loans loan-id)
-    (ok true)
+    
+    ;; 2. Transfer loan to borrower
+    (try! (as-contract (stx-transfer? amount tx-sender sender)))
+    
+    ;; 3. Callback: Borrower executes logic
+    ;; The borrower contract must perform arbitrage/liquidations and then return true
+    (try! (contract-call? borrower execute-operation amount fee))
+    
+    ;; 4. Verify repayment
+    ;; We optimistically pull the repayment + fee back from the borrower
+    ;; This fails if the borrower didn't approve or doesn't have the funds
+    (try! (stx-transfer? total-repay sender (as-contract tx-sender)))
+    
+    ;; 5. Update state (profit)
+    (var-set total-liquidity (+ (var-get total-liquidity) fee))
+    
+    (ok total-repay)
   )
 )
