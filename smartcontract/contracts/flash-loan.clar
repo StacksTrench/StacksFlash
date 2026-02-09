@@ -31,6 +31,13 @@
   )
 )
 
+(define-public (withdraw-fees (amount uint) (recipient principal))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-unauthorized)
+    (as-contract (stx-transfer? amount tx-sender recipient))
+  )
+)
+
 (define-public (flash-loan (amount uint) (borrower <flash-borrower-trait>))
   (let (
     (fee (calculate-fee amount))
