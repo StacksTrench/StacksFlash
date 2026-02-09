@@ -5,9 +5,11 @@
 (define-constant err-unauthorized (err u100))
 (define-constant err-insufficient-liquidity (err u101))
 (define-constant err-loan-not-repaid (err u102))
+(define-constant err-reentrant (err u103))
 
 (define-data-var total-liquidity uint u0)
 (define-data-var flash-loan-fee uint u9) ;; 0.09% fee
+(define-data-var locked bool false)
 
 (define-trait flash-borrower-trait
   (
@@ -37,6 +39,10 @@
     (total-repay (+ amount fee))
     (sender tx-sender)
   )
+    ;; Reentrancy Guard
+    (asserts! (not (var-get locked)) err-reentrant)
+    (var-set locked true)
+    
     ;; 1. Check liquidity
     (asserts! (>= (var-get total-liquidity) amount) err-insufficient-liquidity)
     
@@ -45,16 +51,32 @@
     
     ;; 3. Callback: Borrower executes logic
     ;; The borrower contract must perform arbitrage/liquidations and then return true
-    (try! (contract-call? borrower execute-operation amount fee))
-    
-    ;; 4. Verify repayment
-    ;; We optimistically pull the repayment + fee back from the borrower
-    ;; This fails if the borrower didn't approve or doesn't have the funds
-    (try! (stx-transfer? total-repay sender (as-contract tx-sender)))
-    
-    ;; 5. Update state (profit)
-    (var-set total-liquidity (+ (var-get total-liquidity) fee))
-    
-    (ok total-repay)
+    (match (contract-call? borrower execute-operation amount fee)
+      success 
+        (begin
+           ;; 4. Verify repayment
+           ;; We optimistically pull the repayment + fee back from the borrower
+           ;; This fails if the borrower didn't approve or doesn't have the funds
+           (match (stx-transfer? total-repay sender (as-contract tx-sender))
+             repay-success
+               (begin
+                 ;; 5. Update state (profit)
+                 (var-set total-liquidity (+ (var-get total-liquidity) fee))
+                 (var-set locked false) ;; Unlock
+                 (ok total-repay)
+               )
+             repay-error
+               (begin
+                 (var-set locked false) ;; Unlock on error
+                 (err err-loan-not-repaid)
+               )
+           )
+        )
+      failure
+        (begin
+           (var-set locked false) ;; Unlock on error
+           (err err-loan-not-repaid)
+        )
+    )
   )
 )
