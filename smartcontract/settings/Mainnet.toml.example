@@ -1,0 +1,16 @@
+# IMPORTANT:
+# - This is an example file. Do NOT put real secrets here.
+# - Copy this file to `Mainnet.toml` and edit that file locally.
+# - Replace the mnemonic below with your real MAINNET seed phrase OR use `private_key`.
+
+
+[network]
+name = "mainnet"
+stacks_node_rpc_address = "https://api.hiro.so"
+deployment_fee_rate = 10
+
+[accounts.deployer]
+# - Alternatively, you can use a `private_key = "..."` field instead of `mnemonic`.
+mnemonic = "<YOUR PRIVATE MAINNET MNEMONIC HERE>"
+balance = 0
+sbtc_balance = 0

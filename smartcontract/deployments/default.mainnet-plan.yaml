@@ -1,0 +1,25 @@
+---
+id: 0
+name: Mainnet deployment
+network: mainnet
+stacks-node: "https://api.hiro.so"
+bitcoin-node: "http://blockstack:blockstacksystem@bitcoin.blockstack.com:8332"
+plan:
+  batches:
+    - id: 0
+      transactions:
+        - contract-publish:
+            contract-name: scredence-traits-alpha
+            expected-sender: SPZYY7560YPR8BY63XNTDX36HBY1G8K0TST365B2
+            cost: 327315
+            path: contracts/scredence-traits-alpha.clar
+            anchor-block-only: true
+            clarity-version: 4
+        - contract-publish:
+            contract-name: scredence-verification-alpha
+            expected-sender: SPZYY7560YPR8BY63XNTDX36HBY1G8K0TST365B2
+            cost: 327315
+            path: contracts/scredence-verification-alpha.clar
+            anchor-block-only: true
+            clarity-version: 4
+      epoch: "3.3"
