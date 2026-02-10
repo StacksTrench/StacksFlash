@@ -22,11 +22,11 @@ This document tracks the development of the StacksFlash protocol, including smar
   - [x] Add access control for admin-only functions.
 
 ### Issue #3: Security Hardening (Reentrancy)
-**Status:** ❌ PENDING
+**Status:** ✅ COMPLETED
 **Description:** Protect the protocol against reentrancy attacks during the callback execution.
 - **Tasks:**
-  - [ ] Implement a reentrancy guard (mutex lock).
-  - [ ] Add tests for reentrancy scenarios.
+  - [x] Implement a reentrancy guard (mutex lock).
+  - [x] Add tests for reentrancy scenarios.
 
 ---
 
