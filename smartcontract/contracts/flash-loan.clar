@@ -10,6 +10,7 @@
 (define-data-var total-liquidity uint u0)
 (define-data-var flash-loan-fee uint u9) ;; 0.09% fee
 (define-data-var locked bool false)
+(define-data-var accumulated-fees uint u0)
 
 (define-trait flash-borrower-trait
   (
@@ -33,10 +34,14 @@
   )
 )
 
-(define-public (withdraw-fees (amount uint) (recipient principal))
-  (begin
-    (asserts! (is-eq tx-sender contract-owner) err-unauthorized)
-    (as-contract (stx-transfer? amount tx-sender recipient))
+(define-public (withdraw-all-fees (recipient principal))
+  (let ((fees (var-get accumulated-fees)))
+    (begin
+      (asserts! (is-eq tx-sender contract-owner) err-unauthorized)
+      (asserts! (> fees u0) (err u104))
+      (var-set accumulated-fees u0)
+      (as-contract (stx-transfer? fees tx-sender recipient))
+    )
   )
 )
 
@@ -46,40 +51,55 @@
     (total-repay (+ amount fee))
     (sender tx-sender)
   )
-    ;; Reentrancy Guard
-    (asserts! (not (var-get locked)) err-reentrant)
+    ;; Check reentrancy
+    (asserts! (not (var-get locked)) (err err-reentrant))
     (var-set locked true)
     
-    ;; 1. Check liquidity
-    (asserts! (>= (var-get total-liquidity) amount) err-insufficient-liquidity)
-    
-    ;; 2. Transfer loan to borrower
-    (try! (as-contract (stx-transfer? amount tx-sender sender)))
-    
-    ;; 3. Callback: Borrower executes logic
-    (match (contract-call? borrower execute-operation amount fee)
-      success 
-        (begin
-           ;; 4. Verify repayment
-           (match (stx-transfer? total-repay sender (as-contract tx-sender))
-             repay-success
-               (begin
-                 (var-set total-liquidity (+ (var-get total-liquidity) fee))
-                 (var-set locked false) ;; Unlock
-                 (ok total-repay)
-               )
-             repay-error
-               (begin
-                 (var-set locked false) ;; Unlock on error
-                 (err err-loan-not-repaid)
-               )
-           )
+    ;; Check liquidity
+    (if (>= (var-get total-liquidity) amount)
+      (begin
+        ;; Transfer to borrower
+        (match (as-contract (stx-transfer? amount tx-sender sender))
+          transfer-success
+            (begin
+              ;; Execute borrower's operation
+              (match (contract-call? borrower execute-operation amount fee)
+                operation-success
+                  (begin
+                    ;; Get repayment
+                    (match (stx-transfer? total-repay sender (as-contract tx-sender))
+                      repayment-success
+                        (begin
+                          (var-set accumulated-fees (+ (var-get accumulated-fees) fee))
+                          (var-set total-liquidity (+ (var-get total-liquidity) amount))
+                          (var-set locked false)
+                          (ok total-repay)
+                        )
+                      repayment-error
+                        (begin
+                          (var-set locked false)
+                          (err err-loan-not-repaid)
+                        )
+                    )
+                  )
+                operation-failure
+                  (begin
+                    (var-set locked false)
+                    (err err-loan-not-repaid)
+                  )
+              )
+            )
+          transfer-error
+            (begin
+              (var-set locked false)
+              (err err-insufficient-liquidity)
+            )
         )
-      failure
-        (begin
-           (var-set locked false) ;; Unlock on error
-           (err err-loan-not-repaid)
-        )
+      )
+      (begin
+        (var-set locked false)
+        (err err-insufficient-liquidity)
+      )
     )
   )
 )
